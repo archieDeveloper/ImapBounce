@@ -6,65 +6,98 @@
  * @package ImapBounce
  * @link https://github.com/archieDeveloper/ImapBounce/ The ImapBounce GitHub project
  * @author Arkady Kozhedub (archie) <arkadij.ok@gmail.com>
- * @copyright 2015 Arkady Kozhedub
- * @license http://www.gnu.org/copyleft/lesser.html GNU Lesser General Public License
- * @note This program is distributed in the hope that it will be useful - WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.
+ * @copyright 2015, Arkady Kozhedub
+ * @license GPL licensed
  */
-/**
- * ImapBounce - PHP parse bounced emails.
- * @package ImapBounce
- * @author Arkady Kozhedub (archie) <arkadij.ok@gmail.com>
- */
+
 class ImapBounce
 {
     public $config = [
         'subject' => 'Delivery Status Notification (Failure)',
-        'from' => 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>',
-
-        'host' => false,
-        'port' => false,
-        'protocols' => false,
-        'user' => false,
-        'password' => false
+        'from' => 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>'
     ];
+
+    /******************
+     * Private fields *
+     ******************/
 
     /**
      * Resource authorization
-     * @type resource
+     * @var resource
      */
     private $_connection = null;
 
     /**
      * Information authorization
-     * @type object
+     * @var object
      */
     private $_connectionCheck = null;
 
     /**
      * Headers all messages
-     * @type array
+     * @var array
      */
     private $_headersMessages = null;
 
     /**
+     * Bounce messages
+     * @var array
+     */
+    private $_bounceMessages = null;
+
+    /**
      * Count messages in one task
-     * @type integer
+     * @var integer
      */
     private $_countMessagesInTask = 500;
 
     /**
      * Count iteration for cycle
-     * @type integer
+     * @var integer
      */
     private $_countIteration = null;
 
     /**
      * Count messages for last iteration
-     * @type integer
+     * @var integer
      */
     private $_lastIteration = null;
+
+    /**
+     * Mailbox host (default - localhost)
+     * @var string
+     */
+    private $_mailbox_host = 'localhost';
+
+    /**
+     * Mailbox port (default - 143)
+     * @var integer
+     */
+    private $_mailbox_port = 143;
+
+    /**
+     * Mailbox protocols (default - ['imap'])
+     * @var array
+     */
+    private $_mailbox_protocols = ['imap'];
+
+    /**
+     * Mailbox type (default - INBOX)
+     * @var string
+     */
+    private $_mailbox_type = 'INBOX';
+
+    /**
+     * Mailbox username
+     * @var string
+     */
+    private $_mailbox_user = '';
+
+    /**
+     * Mailbox password
+     * @var string
+     */
+    private $_mailbox_password = '';
 
     /**
      * SMTP RFC standard line ending.
@@ -77,28 +110,42 @@ class ImapBounce
     }
 
     /**
-     * Auth in Imap service
-     * @param string $host Host
-     * @param string $port Port
-     * @param array $protocols Protocols for connecting
-     * @param string $user User
-     * @param string $password Password
+     * Authorization in Imap service
+     * @param array $options setting authorization
      * @access public
      * @return bool
      * @throws Exception
      */
-    public function auth($host,$port,$protocols,$user,$password)
+    public function authorization(array $options = array())
     {
-        if(!$host || !$port || !$protocols || !$user || !$password) {
-            throw new Exception('Not authorized imap!');
-        }
+        $this->settingMailbox($options);
         if($this->_connection == null) {
-            $this->_connection = $this->_connect($host,$port,$protocols,$user,$password);
+            $this->_connection = $this->_connect();
         }
         if($this->_connection) {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Setting mailbox
+     * @param array $options setting authorization
+     * @access public
+     * @return void
+     */
+    public function settingMailbox(array $options)
+    {
+        if (isset($options) && is_array($options)) {
+            foreach ($options as $field => $value) {
+                $methodName = 'setMailbox'.ucfirst($field);
+                if(method_exists($this, $methodName)) {
+                    $this->$methodName($value);
+                } else {
+                    echo 'Не существующая настройка: '.$field, self::CRLF;
+                }
+            }
+        }
     }
 
     /**
@@ -166,6 +213,167 @@ class ImapBounce
     }
 
     /**
+     * Get all bounce messages
+     * @access public
+     * @return array|boolean
+     */
+    public function getBounceMessages()
+    {
+        if ($this->_bounceMessages != null) {
+            return $this->_bounceMessages;
+        }
+        $allHeaders = $this->getAllHeaders();
+        if($allHeaders) {
+            $bounceMessages = [];
+            foreach($allHeaders as $messageHeader) {
+                if(
+                    (isset($messageHeader->subject))
+                    && (isset($messageHeader->from))
+                    && ($messageHeader->subject == $this->config['subject'])
+                    && ($messageHeader->from == $this->config['from'])
+                ){
+                    $bodyMessage = imap_body($this->_connection,$messageHeader->msgno);
+
+                    $email = $this->_findField($bodyMessage, "Delivery to the following recipient failed permanently:","Technical details of permanent failure:");
+                    $message = $this->_findField($bodyMessage, "Technical details of permanent failure:", "----- Original message -----");
+
+                    array_push($bounceMessages, [
+                        'email' => $email,
+                        'message' => $message
+                    ]);
+                }
+            }
+            return $bounceMessages;
+        }
+    }
+
+    /**
+     * Get mailbox host
+     * @access public
+     * @return string
+     */
+    public function getMailboxHost()
+    {
+        return $this->_mailbox_host;
+    }
+
+    /**
+     * Get mailbox port
+     * @access public
+     * @return integer
+     */
+    public function getMailboxPort()
+    {
+        return $this->_mailbox_port;
+    }
+
+    /**
+     * Get mailbox protocols
+     * @access public
+     * @return array
+     */
+    public function getMailboxProtocols()
+    {
+        return $this->_mailbox_protocols;
+    }
+
+    /**
+     * Get mailbox type
+     * @access public
+     * @return string
+     */
+    public function getMailboxType()
+    {
+        return $this->_mailbox_type;
+    }
+
+    /**
+     * Get mailbox user
+     * @access public
+     * @return string
+     */
+    public function getMailboxUser()
+    {
+        return $this->_mailbox_user;
+    }
+
+    /**
+     * Get mailbox password
+     * @access public
+     * @return string
+     */
+    public function getMailboxPassword()
+    {
+        return $this->_mailbox_password;
+    }
+
+    /**
+     * Set mailbox host
+     * @access public
+     * @param string $host
+     * @return void
+     */
+    public function setMailboxHost($host)
+    {
+        $this->_mailbox_host = (string)$host;
+    }
+
+    /**
+     * Set mailbox port
+     * @access public
+     * @param integer $port
+     * @return void
+     */
+    public function setMailboxPort($port)
+    {
+        $this->_mailbox_port = (integer)$port;
+    }
+
+    /**
+     * Set mailbox protocols
+     * @access public
+     * @param array $protocols
+     * @return void
+     */
+    public function setMailboxProtocols($protocols)
+    {
+        $this->_mailbox_protocols = (array)$protocols;
+    }
+
+    /**
+     * Set mailbox type
+     * @access public
+     * @param string $type
+     * @return void
+     */
+    public function setMailboxType($type)
+    {
+        $this->_mailbox_type = (string)$type;
+    }
+
+    /**
+     * Set mailbox user
+     * @access public
+     * @param string $user
+     * @return void
+     */
+    public function setMailboxUser($user)
+    {
+        $this->_mailbox_user = (string)$user;
+    }
+
+    /**
+     * Set mailbox password
+     * @access public
+     * @param string $password
+     * @return void
+     */
+    public function setMailboxPassword($password)
+    {
+        $this->_mailbox_password = (string)$password;
+    }
+
+    /**
      * Disconnect from Imap
      * @access public
      * @return void
@@ -175,26 +383,21 @@ class ImapBounce
         $this->_disconnect();
     }
 
-    /****************************************************************
-     *                       ПРИВАТНЫЕ МЕТОДЫ                       *
-     ****************************************************************/
+    /********************
+     * Private methods *
+     ********************/
 
     /**
      * Connect to a Imap server
      * @access private
      * @return resource
      */
-    private function _connect($host,$port,$protocols,$user,$password)
+    private function _connect()
     {
-        $this->config['host'] = $host;
-        $this->config['port'] = $port;
-        $this->config['protocols'] = $protocols;
-        $this->config['user'] = $user;
-        $this->config['password'] = $password;
         return imap_open(
-            '{'.$host.':'.$port.'/'.implode('/', $protocols).'}',
-            $user,
-            $password
+            '{'.$this->_mailbox_host.':'.$this->_mailbox_port.'/'.implode('/', $this->_mailbox_protocols).'}'.$this->_mailbox_type,
+            $this->_mailbox_user,
+            $this->_mailbox_password
         );
     }
 
@@ -217,13 +420,7 @@ class ImapBounce
     private function _isAuth()
     {
         try {
-            if($this->auth(
-                $this->config['host'],
-                $this->config['port'],
-                $this->config['protocols'],
-                $this->config['user'],
-                $this->config['password']
-            )) {
+            if($this->authorization()) {
                 return true;
             }
         } catch (Exception $e) {
