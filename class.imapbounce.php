@@ -82,7 +82,7 @@ class ImapBounce
             return $a->Nmsgs;
         }
         if($this->connection->isAuth()){
-            return imap_num_msg($this->_connection);
+            return imap_num_msg($this->connection->getResource());
         }
         return false;
     }
@@ -109,7 +109,7 @@ class ImapBounce
             }
             echo 'Task '.($i+1).': '.$openCursor.' - '.$closeCursor." [".round(($i/$this->_countIteration)*100, 2)."%]", self::CRLF;
             if($this->connection->isAuth()){
-                $result = array_merge($result, imap_fetch_overview($this->_connection,"".($openCursor).":".$closeCursor."",0));
+                $result = array_merge($result, imap_fetch_overview($this->connection->getResource(),"".($openCursor).":".$closeCursor."",0));
                 continue;
             }
             return false;
@@ -138,7 +138,7 @@ class ImapBounce
                     && ($messageHeader->subject == $this->config['subject'])
                     && ($messageHeader->from == $this->config['from'])
                 ){
-                    $bodyMessage = imap_body($this->_connection,$messageHeader->msgno);
+                    $bodyMessage = imap_body($this->connection->getResource(),$messageHeader->msgno);
 
                     $email = $this->_findField($bodyMessage, "Delivery to the following recipient failed permanently:","Technical details of permanent failure:");
                     $message = $this->_findField($bodyMessage, "Technical details of permanent failure:", "----- Original message -----");

@@ -74,6 +74,19 @@ class ConnectionImapBounce
     }
 
     /**
+     * Get resource
+     * @access public
+     * @return resourse|bool
+     */
+    public function getResource()
+    {
+        if($this->_connection != null) {
+            return $this->_connection;
+        }
+        return false;
+    }
+
+    /**
      * Is authorization?
      * @access public
      * @return boolean
@@ -126,7 +139,9 @@ class ConnectionImapBounce
     private function _disconnect()
     {
         if($this->isAuth()){
-            return imap_close($this->_connection);
+            $resultDiconnect = imap_close($this->_connection);
+            $this->_connection = null;
+            return $resultDiconnect;
         }
         return false;
     }
